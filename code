@@ -1,0 +1,418 @@
+import pickle
+
+
+training_file = 'train.p'
+testing_file  = 'test.p'
+
+with open(training_file, mode='rb') as f:
+    train = pickle.load(f)
+    
+with open(testing_file, mode='rb') as f:
+    test = pickle.load(f)
+    
+features_train = train['features']
+labels_train   = train['labels']
+features_test  = test['features']
+labels_test    = test['labels']
+
+
+
+print(type(features_train))
+
+
+print(labels_train[1000])
+
+
+import numpy as np
+from sklearn.preprocessing import LabelBinarizer
+
+train_encoder = LabelBinarizer()
+train_encoder.fit(labels_train)
+
+
+print(labels_train)
+
+labels_train = train_encoder.transform(labels_train).astype(np.float32)
+
+test_encoder = LabelBinarizer()
+test_encoder.fit(labels_test)
+
+labels_test  = test_encoder.transform(labels_test).astype(np.float32)
+
+
+
+print(labels_train)
+print(labels_train[0])
+print(labels_train[-1])
+
+
+
+import numpy as np
+
+
+
+n_train     = len(features_train)
+n_test      = len(features_test)
+image_shape = features_train[0].shape    
+n_classes   = labels_train[0].size       
+
+
+print("Number of training examples = ", n_train)
+print("Number of testing examples = ", n_test)
+print("Image data shape = ", image_shape)
+print("Number of classes = ", n_classes)
+
+
+
+
+import random
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+
+
+print("Training images")
+fig = plt.figure(figsize = (10,10))
+
+for i in range(1,9):
+    fig.add_subplot(1,8,i)
+    rnd_image = random.choice(features_train)
+    plt.imshow(rnd_image)
+    plt.axis('off')
+    
+plt.show()
+
+
+print("Test images")
+fig = plt.figure(figsize = (10,10))
+
+for i in range(1,9):
+    fig.add_subplot(1,8,i)
+    rnd_image = random.choice(features_train)
+    plt.imshow(rnd_image)
+    plt.axis('off')
+    
+plt.show()
+
+
+
+
+from tqdm import tqdm
+
+
+def normalize_image(image):
+    return ((image - 128.0) / 256.0).flatten()
+
+    
+def normalize_pickle(pickle):
+    result = []
+    pickle_pbar = tqdm(range(len(pickle)), unit='images')
+    for image in pickle_pbar:
+        result.append(normalize_image(pickle[image]))
+    return np.array(result, np.float32)
+
+
+
+
+import matplotlib.colors as mcol
+
+
+
+def convert_to_hsv(rgb):
+    return mcol.rgb_to_hsv(rgb)
+    
+def convert_to_rgb(hsv):
+    return mcol.hsv_to_rgb(hsv)
+
+def transform_hsv(hsv, amount):
+    return hsv + amount
+    
+def adjust_hsv(rgb, amount):
+    hsv = convert_to_hsv(rgb)
+    hsv[2] = np.array([transform_hsv(x, amount) for x in hsv[2]])
+    return convert_to_rgb(hsv)
+    
+def create_converted_image(source, index):
+    image = source[index]
+    np.append(source, adjust_hsv(image, 10))
+    np.append(source, adjust_hsv(image, -10))
+
+
+
+from PIL import ImageEnhance
+from PIL import Image
+
+
+def adjust_contrast(image, amount):
+    contrast = ImageEnhance.Contrast(image)
+    return np.array(contrast.enhance(amount))
+
+def create_adjusted_image(source, index):
+    image = Image.fromarray(source[index])
+    np.append(source, adjust_contrast(image, 1))
+    np.append(source, adjust_contrast(image, 2))
+
+
+
+
+print("Training images")
+fig = plt.figure(figsize = (10,10))
+
+for i in range(1,9):
+    fig.add_subplot(1,8,i)
+    rnd_image = random.choice(features_train)
+    plt.imshow(rnd_image)
+    plt.axis('off')
+    
+plt.show()
+
+
+print("Test images")
+fig = plt.figure(figsize = (10,10))
+
+for i in range(1,9):
+    fig.add_subplot(1,8,i)
+    rnd_image = random.choice(features_test)
+    plt.imshow(rnd_image)
+    plt.axis('off')
+    
+plt.show()
+
+
+
+
+features_train = normalize_pickle(features_train)
+features_test = normalize_pickle(features_test)
+
+
+
+print(features_train)
+
+
+
+import tensorflow as tf
+import math
+
+
+
+
+eta     = 0.1
+dropout = 0.5
+deviation = 0.25
+
+
+
+total_training_images = len(features_train)
+
+
+
+
+
+image_size     = 32 * 32 * 3
+labels_count   = labels_train[0].size
+
+
+
+
+
+ratio = image_size / labels_count
+scale_factor = pow(ratio, 0.333)
+
+#hidden1_count = int(image_size / scale_factor)
+#hidden2_count = int(hidden1_count / scale_factor)
+
+hidden1_count = 200
+hidden2_count = 100
+
+
+# Print
+print('Teaining images to process: ' + str(total_training_images))
+print('Features (image size): ' + str(image_size))
+print('Hidden1 Size: ' + str(hidden1_count))
+print('Hidden2 Size: ' + str(hidden2_count))
+print('Unique labels (label one-hot dimension): ' + str(labels_count))
+
+
+
+
+
+features = tf.placeholder(tf.float32, [None, image_size])
+labels   = tf.placeholder(tf.float32, [None, labels_count])
+
+dropout_ph = tf.placeholder(tf.float32)
+
+
+
+weights = {
+    'hidden1': tf.Variable(tf.truncated_normal([image_size, hidden1_count],stddev = deviation)), 
+    'hidden2': tf.Variable(tf.truncated_normal([hidden1_count, hidden2_count], stddev = deviation)),
+    'out'    : tf.Variable(tf.truncated_normal([hidden2_count, labels_count], stddev = deviation))
+}
+
+biases = {
+    'hidden1': tf.Variable(tf.zeros([hidden1_count])), 
+    'hidden2': tf.Variable(tf.zeros([hidden2_count])),
+    'out'    : tf.Variable(tf.zeros([labels_count]))
+}
+
+
+
+
+layer_1    = tf.matmul(features, weights['hidden1']) + biases['hidden1']
+layer_1_r  = tf.nn.tanh(layer_1)
+
+layer_1_d  = tf.nn.dropout(layer_1_r, dropout_ph)
+
+layer_2    = tf.matmul(layer_1_d, weights['hidden2']) + biases['hidden2']
+layer_2_r  = tf.nn.tanh(layer_2)
+
+layer_2_d  = tf.nn.dropout(layer_2_r, dropout_ph)
+
+logits     = tf.matmul(layer_2_d, weights['out']) + biases['out']
+
+
+cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, labels)
+cost          = tf.reduce_mean(cross_entropy)
+optimizer     = tf.train.GradientDescentOptimizer(eta).minimize(cost)
+
+
+
+
+correct_bool  = tf.equal(tf.argmax(logits, 1), tf.argmax(labels, 1))
+correct_float = tf.cast(correct_bool, tf.float32)
+accuracy      = tf.reduce_mean(correct_float)
+
+
+
+
+
+
+
+epochs     = 2500
+batch_size = 500
+
+
+test_rate  = 500
+
+
+
+batches = int(math.ceil(total_training_images / batch_size))
+
+print('Mini-batch size: ' + str(batch_size))
+print('Number of batches per epoch: ' + str(batches))
+
+
+
+test_accuracy_list  = []
+cost_list           = []
+batch_list          = []
+batch_counter       = 0
+
+
+
+testing_dict = {features: features_test, labels: labels_test, dropout_ph: dropout}
+
+
+
+
+init = tf.initialize_all_variables()
+
+sess = tf.Session()
+sess.run(init)
+    
+    
+for epoch in range(epochs):
+
+    batch_bar = tqdm(range(batches), desc = 'Epoch {:>2}/{}'.format(epoch, epochs), unit='batches')
+
+    for i in batch_bar:
+
+        batch_start = batch_size * i
+        
+        
+        batch_features = features_train[batch_start : (batch_start + batch_size)]
+        batch_labels   = labels_train[batch_start : (batch_start + batch_size)]
+        
+        training_dict = {features: batch_features, labels: batch_labels, dropout_ph: dropout}
+        c, _ = sess.run([cost, optimizer], feed_dict = training_dict)
+        
+
+        if not batch_counter % test_rate: 
+
+            test_accuracy = sess.run(accuracy, feed_dict = testing_dict)
+            test_accuracy_list.append(test_accuracy)
+            cost_list.append(c)
+
+            batch_list.append(batch_counter / test_rate)
+            print(c)
+            
+        batch_counter += 1
+        
+        
+            
+            
+print('Test set accuracy: ' + str(test_accuracy_list[-1]))
+
+
+plt.plot(batch_list, test_accuracy_list, 'r', label='Testing Accuracy')
+
+plt.legend(loc = 4)
+plt.show()
+
+from IPython.display import Image
+Image("images/training.png")
+
+
+import matplotlib.image as mpimg
+import matplotlib.pyplot as plt
+
+
+
+def load_image(file_number):
+    return mpimg.imread('test_images/test' + str(file_number) + '.jpg')
+
+
+fig = plt.figure(figsize = (10,10))
+
+for i in range(1,6):
+    fig.add_subplot(1,5,i)
+    plt.imshow(load_image(i))
+    plt.axis('off')
+    
+plt.show()
+
+
+
+import numpy as np
+from sklearn.preprocessing import LabelBinarizer
+
+last_encoder = LabelBinarizer()
+last_encoder.fit(labels_train)
+
+solutions_packed = [14,1,13,13,3]
+solutions_onehot = last_encoder.transform(solutions_packed).astype(np.float32)
+
+
+for i in range(1,6):
+    image = load_image(i)
+    image = normalize_image(image)
+    test_dict = {features: [image], labels: [solutions_onehot[i-1]], dropout_ph: dropout}
+    test_accuracy = sess.run(accuracy, feed_dict = test_dict)
+    print('Image ' + str(i) + ': ' + str(test_accuracy))
+
+
+
+softmax = tf.nn.top_k(tf.nn.softmax(logits), 5)
+
+
+for i in range(1,6):
+    image = load_image(i)
+    image = normalize_image(image)
+    test_dict = {features: [image], labels: [solutions_onehot[i-1]], dropout_ph: dropout}
+    sm_top5 = sess.run(softmax, feed_dict = test_dict)
+    print('Image ' + str(i) + ': ' + str(sm_top5.indices))
+    print('Image ' + str(i) + ': ' + str(sm_top5.values))
+    print("\n")
+
+ 
+
